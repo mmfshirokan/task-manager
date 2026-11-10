@@ -1,25 +1,23 @@
-.PHONY: run build generate test test-unit lint up down
+.PHONY: run build generate swagger test test-unit lint up down
 
-run:
-	go run .
+help:
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-build:
-	go build -o bin/task-manager .
-
-generate:
+generate: ## Кодогенерация
 	go generate ./...
 
-test:
-	go test -race -count=1 ./...
+swagger: ## Обновление Swagger-документации (docs/) по аннотациям хендлеров
+	go tool swag fmt -d ./internal/handlers
+	go tool swag init -g routes.go -d ./internal/handlers,./models -o ./docs --outputTypes go,json,yaml
 
-test-unit:
-	go test -short -race ./...
+test: ## Юнит и интеграционные тесты
+	gotestsum --format=testname -- -race ./...
 
-lint:
+lint: ## Запуск линта
 	golangci-lint run ./...
 
-up:
+up: ## Запуск приложения в докере
 	docker compose up --build -d
 
-down:
+down: ## Завершение приложения в докере
 	docker compose down

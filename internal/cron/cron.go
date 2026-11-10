@@ -12,8 +12,6 @@ type OverdueMarker interface {
 	MarkOverdue(ctx context.Context) (int64, error)
 }
 
-// OverdueJob periodically marks unfinished tasks with a passed deadline as
-// overdue.
 type OverdueJob struct {
 	marker   OverdueMarker
 	interval time.Duration
@@ -24,8 +22,6 @@ func New(marker OverdueMarker, interval time.Duration, log *slog.Logger) *Overdu
 	return &OverdueJob{marker: marker, interval: interval, log: log}
 }
 
-// Run executes the job immediately and then on every interval until ctx is
-// cancelled.
 func (j *OverdueJob) Run(ctx context.Context) {
 	j.log.InfoContext(ctx, "overdue job started", "interval", j.interval.String())
 	defer j.log.Info("overdue job stopped")

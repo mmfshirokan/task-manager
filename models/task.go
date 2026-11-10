@@ -36,8 +36,8 @@ type Task struct {
 	UpdatedAt   time.Time
 }
 
-// NewTask is the user input for creating a task. A nil AssigneeID means the
-// task is assigned to its creator.
+// NewTask — данные для создания задачи. Если AssigneeID равен nil, исполнителем
+// становится автор.
 type NewTask struct {
 	Title       string
 	Description string
@@ -45,7 +45,7 @@ type NewTask struct {
 	AssigneeID  *uuid.UUID
 }
 
-// TaskUpdate is a partial update: nil fields are left unchanged.
+// TaskUpdate — частичное обновление: поля со значением nil не изменяются.
 type TaskUpdate struct {
 	Title       *string
 	Description *string
@@ -54,7 +54,7 @@ type TaskUpdate struct {
 	AssigneeID  *uuid.UUID
 }
 
-// Fields returns the JSON names of the fields set in the update.
+// Fields возвращает JSON-имена полей, заданных в обновлении.
 func (u TaskUpdate) Fields() []string {
 	var fields []string
 

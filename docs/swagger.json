@@ -1,0 +1,725 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "REST API для управления задачами: регистрация и вход по JWT, создание, просмотр, изменение и удаление задач.\nВсе авторизованные пользователи видят все задачи. Автор может менять любые поля и удалять задачу, исполнитель — только статус.\nФоновый процесс переводит невыполненные задачи с истёкшим сроком в статус overdue.",
+        "title": "Сервис управления задачами",
+        "contact": {},
+        "version": "1.0"
+    },
+    "paths": {
+        "/api/v1/auth/login": {
+            "post": {
+                "description": "Проверяет email и пароль и выдаёт JWT-токен доступа. Токен передаётся в заголовке Authorization: Bearer \u003cтокен\u003e.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Авторизация"
+                ],
+                "summary": "Вход в систему",
+                "parameters": [
+                    {
+                        "description": "Email и пароль",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.CredentialsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Токен выдан",
+                        "schema": {
+                            "$ref": "#/definitions/models.TokenResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный JSON",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Неверный email или пароль",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/register": {
+            "post": {
+                "description": "Создаёт нового пользователя. Email приводится к нижнему регистру и должен быть уникальным, пароль — от 8 до 72 байт.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Авторизация"
+                ],
+                "summary": "Регистрация пользователя",
+                "parameters": [
+                    {
+                        "description": "Email и пароль",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.CredentialsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Пользователь создан",
+                        "schema": {
+                            "$ref": "#/definitions/models.UserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный email, пароль или JSON",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Пользователь с таким email уже существует",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Возвращает страницу задач всех пользователей, от новых к старым. Поддерживает фильтры по статусу, исполнителю и диапазону сроков.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Задачи"
+                ],
+                "summary": "Список задач",
+                "parameters": [
+                    {
+                        "enum": [
+                            "created",
+                            "in_progress",
+                            "completed",
+                            "overdue"
+                        ],
+                        "type": "string",
+                        "description": "Статус задачи",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Идентификатор исполнителя",
+                        "name": "assignee_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Срок не раньше (RFC 3339, включительно)",
+                        "name": "deadline_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Срок не позже (RFC 3339, включительно)",
+                        "name": "deadline_to",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Размер страницы, от 1 до 100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Смещение от начала списка",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Страница задач",
+                        "schema": {
+                            "$ref": "#/definitions/models.TaskListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры фильтра или пагинации",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Нет токена или токен недействителен",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Создаёт задачу от имени текущего пользователя со статусом created. Если исполнитель не указан, им становится автор.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Задачи"
+                ],
+                "summary": "Создание задачи",
+                "parameters": [
+                    {
+                        "description": "Данные задачи",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.CreateTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Задача создана",
+                        "schema": {
+                            "$ref": "#/definitions/models.TaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка валидации: пустое название, срок в прошлом, несуществующий исполнитель",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Нет токена или токен недействителен",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Возвращает задачу по идентификатору. Доступно любому авторизованному пользователю.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Задачи"
+                ],
+                "summary": "Получение задачи",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Идентификатор задачи",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Задача",
+                        "schema": {
+                            "$ref": "#/definitions/models.TaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректный идентификатор",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Нет токена или токен недействителен",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Задача не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Удаляет задачу. Удалить задачу может только её автор.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Задачи"
+                ],
+                "summary": "Удаление задачи",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Идентификатор задачи",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Задача удалена"
+                    },
+                    "400": {
+                        "description": "Некорректный идентификатор",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Нет токена или токен недействителен",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Удалить задачу может только автор",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Задача не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Частично обновляет задачу: изменяются только переданные поля. Автор может менять любые поля, исполнитель — только статус.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Задачи"
+                ],
+                "summary": "Изменение задачи",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Идентификатор задачи",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Изменяемые поля",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.UpdateTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Задача обновлена",
+                        "schema": {
+                            "$ref": "#/definitions/models.TaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка валидации или пустой запрос",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Нет токена или токен недействителен",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Нет прав на изменение этих полей",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Задача не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка сервера",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/healthz": {
+            "get": {
+                "description": "Возвращает ok, если сервис запущен и принимает запросы.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Служебные"
+                ],
+                "summary": "Проверка состояния",
+                "responses": {
+                    "200": {
+                        "description": "Сервис работает",
+                        "schema": {
+                            "$ref": "#/definitions/models.HealthResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "models.CreateTaskRequest": {
+            "type": "object",
+            "properties": {
+                "assignee_id": {
+                    "description": "Исполнитель; если не указан, исполнителем становится автор задачи",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "9fe291d3-2d67-41b0-8d1e-5928b9b3cca6"
+                },
+                "deadline": {
+                    "description": "Срок выполнения в формате RFC 3339, должен быть в будущем",
+                    "type": "string",
+                    "example": "2030-01-01T10:00:00Z"
+                },
+                "description": {
+                    "description": "Описание задачи, до 5000 символов",
+                    "type": "string",
+                    "example": "Собрать список изменений для версии 1.0"
+                },
+                "title": {
+                    "description": "Название задачи, от 1 до 200 символов",
+                    "type": "string",
+                    "example": "Подготовить релиз"
+                }
+            }
+        },
+        "models.CredentialsRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "description": "Email пользователя",
+                    "type": "string",
+                    "example": "alice@example.com"
+                },
+                "password": {
+                    "description": "Пароль, от 8 до 72 байт",
+                    "type": "string",
+                    "example": "secret123"
+                }
+            }
+        },
+        "models.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "description": "Текст ошибки",
+                    "type": "string",
+                    "example": "title: must not be empty"
+                }
+            }
+        },
+        "models.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "description": "Всегда ok, если сервис отвечает",
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
+        "models.Status": {
+            "type": "string",
+            "enum": [
+                "created",
+                "in_progress",
+                "completed",
+                "overdue"
+            ],
+            "x-enum-varnames": [
+                "StatusCreated",
+                "StatusInProgress",
+                "StatusCompleted",
+                "StatusOverdue"
+            ]
+        },
+        "models.TaskListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "Задачи на странице, от новых к старым",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.TaskResponse"
+                    }
+                },
+                "limit": {
+                    "description": "Размер страницы",
+                    "type": "integer",
+                    "example": 20
+                },
+                "offset": {
+                    "description": "Смещение от начала списка",
+                    "type": "integer",
+                    "example": 0
+                },
+                "total": {
+                    "description": "Общее количество задач, подходящих под фильтр",
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
+        "models.TaskResponse": {
+            "type": "object",
+            "properties": {
+                "assignee_id": {
+                    "description": "Исполнитель задачи",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "9fe291d3-2d67-41b0-8d1e-5928b9b3cca6"
+                },
+                "created_at": {
+                    "description": "Дата и время создания",
+                    "type": "string",
+                    "example": "2026-11-09T11:32:00Z"
+                },
+                "creator_id": {
+                    "description": "Автор задачи",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "f4eb7aa4-4a27-4bd2-a8e1-592e7a59f415"
+                },
+                "deadline": {
+                    "description": "Срок выполнения",
+                    "type": "string",
+                    "example": "2030-01-01T10:00:00Z"
+                },
+                "description": {
+                    "description": "Описание задачи",
+                    "type": "string",
+                    "example": "Собрать список изменений для версии 1.0"
+                },
+                "id": {
+                    "description": "Идентификатор задачи",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "c908e324-5d57-4fb7-a2ba-7b36652e143d"
+                },
+                "status": {
+                    "description": "Статус: created — создана, in_progress — в работе, completed — выполнена, overdue — просрочена",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.Status"
+                        }
+                    ],
+                    "example": "created"
+                },
+                "title": {
+                    "description": "Название задачи",
+                    "type": "string",
+                    "example": "Подготовить релиз"
+                },
+                "updated_at": {
+                    "description": "Дата и время последнего изменения",
+                    "type": "string",
+                    "example": "2026-11-09T11:40:00Z"
+                }
+            }
+        },
+        "models.TokenResponse": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "description": "JWT-токен доступа, передаётся в заголовке Authorization: Bearer \u003cтокен\u003e",
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                },
+                "expires_in": {
+                    "description": "Время жизни токена в секундах",
+                    "type": "integer",
+                    "example": 86400
+                },
+                "token_type": {
+                    "description": "Тип токена, всегда Bearer",
+                    "type": "string",
+                    "example": "Bearer"
+                }
+            }
+        },
+        "models.UpdateTaskRequest": {
+            "type": "object",
+            "properties": {
+                "assignee_id": {
+                    "description": "Новый исполнитель",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "a09b1a4a-f390-4f19-a5c8-430ba98088a4"
+                },
+                "deadline": {
+                    "description": "Новый срок выполнения в формате RFC 3339",
+                    "type": "string",
+                    "example": "2030-02-01T10:00:00Z"
+                },
+                "description": {
+                    "description": "Новое описание, до 5000 символов",
+                    "type": "string",
+                    "example": "Добавить раздел о миграциях"
+                },
+                "status": {
+                    "description": "Новый статус",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.Status"
+                        }
+                    ],
+                    "example": "in_progress"
+                },
+                "title": {
+                    "description": "Новое название, от 1 до 200 символов",
+                    "type": "string",
+                    "example": "Подготовить релиз v2"
+                }
+            }
+        },
+        "models.UserResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "Дата и время регистрации",
+                    "type": "string",
+                    "example": "2026-11-09T11:32:00Z"
+                },
+                "email": {
+                    "description": "Email пользователя",
+                    "type": "string",
+                    "example": "alice@example.com"
+                },
+                "id": {
+                    "description": "Идентификатор пользователя",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "f4eb7aa4-4a27-4bd2-a8e1-592e7a59f415"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "JWT-токен из ответа /api/v1/auth/login в формате: Bearer \u003cтокен\u003e",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

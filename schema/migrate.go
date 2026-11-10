@@ -9,11 +9,11 @@ import (
 
 	"github.com/pressly/goose/v3"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
+	_ "github.com/jackc/pgx/v5/stdlib" // регистрирует драйвер database/sql с именем "pgx"
 )
 
-// Migrate applies all pending migrations to the database at dsn and returns
-// the versions that were applied.
+// Migrate применяет к базе по адресу dsn все ещё не применённые миграции и
+// возвращает их версии.
 func Migrate(ctx context.Context, dsn string) (_ []int64, err error) {
 	migrations, err := fs.Sub(Fs, "migrations")
 	if err != nil {

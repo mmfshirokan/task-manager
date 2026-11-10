@@ -16,7 +16,7 @@ import (
 
 	"github.com/mmfshirokan/task-manager/config"
 	"github.com/mmfshirokan/task-manager/internal/cron"
-	"github.com/mmfshirokan/task-manager/internal/handler"
+	"github.com/mmfshirokan/task-manager/internal/handlers"
 	"github.com/mmfshirokan/task-manager/internal/repository"
 	"github.com/mmfshirokan/task-manager/internal/service"
 	"github.com/mmfshirokan/task-manager/schema"
@@ -24,8 +24,8 @@ import (
 
 const readHeaderTimeout = 5 * time.Second
 
-// Run loads the configuration, migrates the database, wires the layers and
-// serves until SIGINT/SIGTERM.
+// Run загружает конфигурацию, применяет миграции, связывает слои и обслуживает
+// запросы до получения SIGINT/SIGTERM.
 func Run() error {
 	cfg, err := config.Load(".env")
 	if err != nil {
@@ -52,14 +52,14 @@ func Run() error {
 	defer pool.Close()
 
 	repo := repository.New(pool)
-	svc := service.New(repo, repo, service.Config{JWTSecret: []byte(cfg.JWTSecret), TokenTTL: cfg.JWTTTL}, logger)
+	svc := service.New(repo.Users, repo.Tasks, service.Config{JWTSecret: []byte(cfg.JWTSecret), TokenTTL: cfg.JWTTTL}, logger)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           handler.New(svc, svc, logger).Routes(),
+		Handler:           handlers.New(svc.Auth, svc.Tasks, logger).Routes(),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
-	job := cron.New(svc, cfg.OverdueInterval, logger)
+	job := cron.New(svc.Tasks, cfg.OverdueInterval, logger)
 
 	return serve(ctx, srv, job, cfg.ShutdownTimeout, logger)
 }
@@ -79,8 +79,8 @@ func connectDB(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// serve runs the HTTP server and the background job until ctx is cancelled or
-// the server fails, then shuts both down gracefully.
+// serve запускает HTTP-сервер и фоновую задачу и работает, пока не отменён ctx
+// или не упал сервер; затем корректно останавливает оба.
 func serve(ctx context.Context, srv *http.Server, job *cron.OverdueJob, timeout time.Duration, log *slog.Logger) error {
 	jobCtx, cancelJob := context.WithCancel(ctx)
 	defer cancelJob()

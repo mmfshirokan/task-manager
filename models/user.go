@@ -13,7 +13,6 @@ type User struct {
 	CreatedAt    time.Time
 }
 
-// Token is a signed bearer access token issued on login.
 type Token struct {
 	AccessToken string
 	ExpiresIn   time.Duration

@@ -1,0 +1,509 @@
+definitions:
+  models.CreateTaskRequest:
+    properties:
+      assignee_id:
+        description: Исполнитель; если не указан, исполнителем становится автор задачи
+        example: 9fe291d3-2d67-41b0-8d1e-5928b9b3cca6
+        format: uuid
+        type: string
+      deadline:
+        description: Срок выполнения в формате RFC 3339, должен быть в будущем
+        example: "2030-01-01T10:00:00Z"
+        type: string
+      description:
+        description: Описание задачи, до 5000 символов
+        example: Собрать список изменений для версии 1.0
+        type: string
+      title:
+        description: Название задачи, от 1 до 200 символов
+        example: Подготовить релиз
+        type: string
+    type: object
+  models.CredentialsRequest:
+    properties:
+      email:
+        description: Email пользователя
+        example: alice@example.com
+        type: string
+      password:
+        description: Пароль, от 8 до 72 байт
+        example: secret123
+        type: string
+    type: object
+  models.ErrorResponse:
+    properties:
+      error:
+        description: Текст ошибки
+        example: 'title: must not be empty'
+        type: string
+    type: object
+  models.HealthResponse:
+    properties:
+      status:
+        description: Всегда ok, если сервис отвечает
+        example: ok
+        type: string
+    type: object
+  models.Status:
+    enum:
+    - created
+    - in_progress
+    - completed
+    - overdue
+    type: string
+    x-enum-varnames:
+    - StatusCreated
+    - StatusInProgress
+    - StatusCompleted
+    - StatusOverdue
+  models.TaskListResponse:
+    properties:
+      items:
+        description: Задачи на странице, от новых к старым
+        items:
+          $ref: '#/definitions/models.TaskResponse'
+        type: array
+      limit:
+        description: Размер страницы
+        example: 20
+        type: integer
+      offset:
+        description: Смещение от начала списка
+        example: 0
+        type: integer
+      total:
+        description: Общее количество задач, подходящих под фильтр
+        example: 42
+        type: integer
+    type: object
+  models.TaskResponse:
+    properties:
+      assignee_id:
+        description: Исполнитель задачи
+        example: 9fe291d3-2d67-41b0-8d1e-5928b9b3cca6
+        format: uuid
+        type: string
+      created_at:
+        description: Дата и время создания
+        example: "2026-11-09T11:32:00Z"
+        type: string
+      creator_id:
+        description: Автор задачи
+        example: f4eb7aa4-4a27-4bd2-a8e1-592e7a59f415
+        format: uuid
+        type: string
+      deadline:
+        description: Срок выполнения
+        example: "2030-01-01T10:00:00Z"
+        type: string
+      description:
+        description: Описание задачи
+        example: Собрать список изменений для версии 1.0
+        type: string
+      id:
+        description: Идентификатор задачи
+        example: c908e324-5d57-4fb7-a2ba-7b36652e143d
+        format: uuid
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/models.Status'
+        description: 'Статус: created — создана, in_progress — в работе, completed
+          — выполнена, overdue — просрочена'
+        example: created
+      title:
+        description: Название задачи
+        example: Подготовить релиз
+        type: string
+      updated_at:
+        description: Дата и время последнего изменения
+        example: "2026-11-09T11:40:00Z"
+        type: string
+    type: object
+  models.TokenResponse:
+    properties:
+      access_token:
+        description: 'JWT-токен доступа, передаётся в заголовке Authorization: Bearer
+          <токен>'
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+      expires_in:
+        description: Время жизни токена в секундах
+        example: 86400
+        type: integer
+      token_type:
+        description: Тип токена, всегда Bearer
+        example: Bearer
+        type: string
+    type: object
+  models.UpdateTaskRequest:
+    properties:
+      assignee_id:
+        description: Новый исполнитель
+        example: a09b1a4a-f390-4f19-a5c8-430ba98088a4
+        format: uuid
+        type: string
+      deadline:
+        description: Новый срок выполнения в формате RFC 3339
+        example: "2030-02-01T10:00:00Z"
+        type: string
+      description:
+        description: Новое описание, до 5000 символов
+        example: Добавить раздел о миграциях
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/models.Status'
+        description: Новый статус
+        example: in_progress
+      title:
+        description: Новое название, от 1 до 200 символов
+        example: Подготовить релиз v2
+        type: string
+    type: object
+  models.UserResponse:
+    properties:
+      created_at:
+        description: Дата и время регистрации
+        example: "2026-11-09T11:32:00Z"
+        type: string
+      email:
+        description: Email пользователя
+        example: alice@example.com
+        type: string
+      id:
+        description: Идентификатор пользователя
+        example: f4eb7aa4-4a27-4bd2-a8e1-592e7a59f415
+        format: uuid
+        type: string
+    type: object
+info:
+  contact: {}
+  description: |-
+    REST API для управления задачами: регистрация и вход по JWT, создание, просмотр, изменение и удаление задач.
+    Все авторизованные пользователи видят все задачи. Автор может менять любые поля и удалять задачу, исполнитель — только статус.
+    Фоновый процесс переводит невыполненные задачи с истёкшим сроком в статус overdue.
+  title: Сервис управления задачами
+  version: "1.0"
+paths:
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 'Проверяет email и пароль и выдаёт JWT-токен доступа. Токен передаётся
+        в заголовке Authorization: Bearer <токен>.'
+      parameters:
+      - description: Email и пароль
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CredentialsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Токен выдан
+          schema:
+            $ref: '#/definitions/models.TokenResponse'
+        "400":
+          description: Некорректный JSON
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Неверный email или пароль
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Вход в систему
+      tags:
+      - Авторизация
+  /api/v1/auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Создаёт нового пользователя. Email приводится к нижнему регистру
+        и должен быть уникальным, пароль — от 8 до 72 байт.
+      parameters:
+      - description: Email и пароль
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CredentialsRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Пользователь создан
+          schema:
+            $ref: '#/definitions/models.UserResponse'
+        "400":
+          description: Некорректный email, пароль или JSON
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "409":
+          description: Пользователь с таким email уже существует
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Регистрация пользователя
+      tags:
+      - Авторизация
+  /api/v1/tasks:
+    get:
+      description: Возвращает страницу задач всех пользователей, от новых к старым.
+        Поддерживает фильтры по статусу, исполнителю и диапазону сроков.
+      parameters:
+      - description: Статус задачи
+        enum:
+        - created
+        - in_progress
+        - completed
+        - overdue
+        in: query
+        name: status
+        type: string
+      - description: Идентификатор исполнителя
+        format: uuid
+        in: query
+        name: assignee_id
+        type: string
+      - description: Срок не раньше (RFC 3339, включительно)
+        format: date-time
+        in: query
+        name: deadline_from
+        type: string
+      - description: Срок не позже (RFC 3339, включительно)
+        format: date-time
+        in: query
+        name: deadline_to
+        type: string
+      - default: 20
+        description: Размер страницы, от 1 до 100
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - default: 0
+        description: Смещение от начала списка
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Страница задач
+          schema:
+            $ref: '#/definitions/models.TaskListResponse'
+        "400":
+          description: Некорректные параметры фильтра или пагинации
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Нет токена или токен недействителен
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Список задач
+      tags:
+      - Задачи
+    post:
+      consumes:
+      - application/json
+      description: Создаёт задачу от имени текущего пользователя со статусом created.
+        Если исполнитель не указан, им становится автор.
+      parameters:
+      - description: Данные задачи
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CreateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Задача создана
+          schema:
+            $ref: '#/definitions/models.TaskResponse'
+        "400":
+          description: 'Ошибка валидации: пустое название, срок в прошлом, несуществующий
+            исполнитель'
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Нет токена или токен недействителен
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Создание задачи
+      tags:
+      - Задачи
+  /api/v1/tasks/{id}:
+    delete:
+      description: Удаляет задачу. Удалить задачу может только её автор.
+      parameters:
+      - description: Идентификатор задачи
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Задача удалена
+        "400":
+          description: Некорректный идентификатор
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Нет токена или токен недействителен
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Удалить задачу может только автор
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Задача не найдена
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Удаление задачи
+      tags:
+      - Задачи
+    get:
+      description: Возвращает задачу по идентификатору. Доступно любому авторизованному
+        пользователю.
+      parameters:
+      - description: Идентификатор задачи
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Задача
+          schema:
+            $ref: '#/definitions/models.TaskResponse'
+        "400":
+          description: Некорректный идентификатор
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Нет токена или токен недействителен
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Задача не найдена
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Получение задачи
+      tags:
+      - Задачи
+    patch:
+      consumes:
+      - application/json
+      description: 'Частично обновляет задачу: изменяются только переданные поля.
+        Автор может менять любые поля, исполнитель — только статус.'
+      parameters:
+      - description: Идентификатор задачи
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Изменяемые поля
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.UpdateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Задача обновлена
+          schema:
+            $ref: '#/definitions/models.TaskResponse'
+        "400":
+          description: Ошибка валидации или пустой запрос
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Нет токена или токен недействителен
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Нет прав на изменение этих полей
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Задача не найдена
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Изменение задачи
+      tags:
+      - Задачи
+  /healthz:
+    get:
+      description: Возвращает ok, если сервис запущен и принимает запросы.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Сервис работает
+          schema:
+            $ref: '#/definitions/models.HealthResponse'
+      summary: Проверка состояния
+      tags:
+      - Служебные
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT-токен из ответа /api/v1/auth/login в формате: Bearer <токен>'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

@@ -12,7 +12,6 @@ var (
 	ErrUnauthorized       = errors.New("unauthorized")
 )
 
-// ValidationError reports invalid client input for a single field.
 type ValidationError struct {
 	Field   string
 	Message string

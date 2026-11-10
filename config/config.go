@@ -21,8 +21,8 @@ type Config struct {
 	LogLevel        slog.Level    `env:"LOG_LEVEL" envDefault:"info"`
 }
 
-// Load reads variables from envFile (if it exists) and then from the process
-// environment. Variables already set in the environment take precedence.
+// Load читает переменные из envFile (если файл есть), затем из окружения процесса.
+// Переменные, уже заданные в окружении, имеют приоритет над файлом.
 func Load(envFile string) (Config, error) {
 	if err := godotenv.Load(envFile); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return Config{}, fmt.Errorf("load env file %s: %w", envFile, err)

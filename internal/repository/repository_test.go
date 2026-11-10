@@ -39,17 +39,17 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// runWithPostgres starts a disposable Postgres container, applies the
-// migrations and runs the tests against it.
+// runWithPostgres поднимает временный контейнер Postgres, применяет миграции и
+// запускает на нём тесты.
 func runWithPostgres(m *testing.M) (int, error) {
-	pool, err := dockertest.NewPool("")
+	dockerPool, err := dockertest.NewPool("")
 	if err != nil {
 		return 0, fmt.Errorf("connect to docker: %w", err)
 	}
 
-	pool.MaxWait = time.Minute
+	dockerPool.MaxWait = time.Minute
 
-	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
+	resource, err := dockerPool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "postgres",
 		Tag:        "17-alpine",
 		Env:        []string{"POSTGRES_USER=test", "POSTGRES_PASSWORD=test", "POSTGRES_DB=tasks"},
@@ -62,12 +62,12 @@ func runWithPostgres(m *testing.M) (int, error) {
 	}
 
 	defer func() {
-		if err := pool.Purge(resource); err != nil {
+		if err := dockerPool.Purge(resource); err != nil {
 			log.Printf("purge postgres container: %v", err)
 		}
 	}()
 
-	// Safety net: docker removes the container even if the test binary is killed.
+	// Страховка: docker удалит контейнер, даже если тестовый процесс будет убит.
 	if err := resource.Expire(300); err != nil {
 		return 0, fmt.Errorf("set container expiry: %w", err)
 	}
@@ -75,25 +75,10 @@ func runWithPostgres(m *testing.M) (int, error) {
 	ctx := context.Background()
 	dsn := fmt.Sprintf("postgres://test:test@%s/tasks?sslmode=disable", resource.GetHostPort("5432/tcp"))
 
-	err = pool.Retry(func() error {
-		db, err := pgxpool.New(ctx, dsn)
-		if err != nil {
-			return err
-		}
-
-		if err := db.Ping(ctx); err != nil {
-			db.Close()
-
-			return err
-		}
-
-		testPool = db
-
-		return nil
-	})
-	if err != nil {
+	if err := dockerPool.Retry(func() error { return connect(ctx, dsn) }); err != nil {
 		return 0, fmt.Errorf("wait for postgres: %w", err)
 	}
+
 	defer testPool.Close()
 
 	if _, err := schema.Migrate(ctx, dsn); err != nil {
@@ -103,7 +88,24 @@ func runWithPostgres(m *testing.M) (int, error) {
 	return m.Run(), nil
 }
 
-// newRepo skips in -short mode and returns a repository over empty tables.
+func connect(ctx context.Context, dsn string) error {
+	db, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return err
+	}
+
+	if err := db.Ping(ctx); err != nil {
+		db.Close()
+
+		return err
+	}
+
+	testPool = db
+
+	return nil
+}
+
+// newRepo пропускает тест в режиме -short и возвращает репозиторий с пустыми таблицами.
 func newRepo(t *testing.T) *repository.Repository {
 	t.Helper()
 
@@ -121,7 +123,7 @@ func newRepo(t *testing.T) *repository.Repository {
 func mustCreateUser(t *testing.T, repo *repository.Repository, email string) models.User {
 	t.Helper()
 
-	user, err := repo.CreateUser(t.Context(), email, "hash")
+	user, err := repo.Users.Create(t.Context(), email, "hash")
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -136,12 +138,23 @@ func mustCreateTask(t *testing.T, repo *repository.Repository, task models.Task)
 		task.Status = models.StatusCreated
 	}
 
-	created, err := repo.CreateTask(t.Context(), task)
+	created, err := repo.Tasks.Create(t.Context(), task)
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
 
 	return created
+}
+
+func mustGetTask(t *testing.T, repo *repository.Repository, id uuid.UUID) models.Task {
+	t.Helper()
+
+	task, err := repo.Tasks.Get(t.Context(), id)
+	if err != nil {
+		t.Fatalf("get task %s: %v", id, err)
+	}
+
+	return task
 }
 
 func wantValidationErr(t *testing.T, err error, field string) {
@@ -153,39 +166,56 @@ func wantValidationErr(t *testing.T, err error, field string) {
 	}
 }
 
-func TestUsers(t *testing.T) {
+func TestUsersCreate(t *testing.T) {
 	repo := newRepo(t)
-	ctx := t.Context()
 
 	alice := mustCreateUser(t, repo, "alice@example.com")
-	if alice.ID == uuid.Nil || alice.CreatedAt.IsZero() {
-		t.Fatalf("generated columns are not returned: %+v", alice)
+	if alice.ID == uuid.Nil || alice.CreatedAt.IsZero() || alice.Email != "alice@example.com" {
+		t.Errorf("generated columns are not returned: %+v", alice)
 	}
 
-	if _, err := repo.CreateUser(ctx, "alice@example.com", "other"); !errors.Is(err, models.ErrAlreadyExists) {
+	if _, err := repo.Users.Create(t.Context(), "alice@example.com", "other"); !errors.Is(err, models.ErrAlreadyExists) {
 		t.Errorf("duplicate email: want ErrAlreadyExists, got %v", err)
 	}
+}
 
-	byEmail, err := repo.GetUserByEmail(ctx, "alice@example.com")
-	if err != nil || byEmail.ID != alice.ID || byEmail.PasswordHash != "hash" {
-		t.Errorf("GetUserByEmail = %+v, %v", byEmail, err)
+func TestUsersGetByEmail(t *testing.T) {
+	repo := newRepo(t)
+	alice := mustCreateUser(t, repo, "alice@example.com")
+
+	got, err := repo.Users.GetByEmail(t.Context(), "alice@example.com")
+	if err != nil {
+		t.Fatalf("GetByEmail: %v", err)
 	}
 
-	byID, err := repo.GetUserByID(ctx, alice.ID)
-	if err != nil || byID.Email != alice.Email {
-		t.Errorf("GetUserByID = %+v, %v", byID, err)
+	if got.ID != alice.ID || got.PasswordHash != "hash" {
+		t.Errorf("GetByEmail = %+v, want %+v", got, alice)
 	}
 
-	if _, err := repo.GetUserByEmail(ctx, "nobody@example.com"); !errors.Is(err, models.ErrNotFound) {
+	if _, err := repo.Users.GetByEmail(t.Context(), "nobody@example.com"); !errors.Is(err, models.ErrNotFound) {
 		t.Errorf("unknown email: want ErrNotFound, got %v", err)
 	}
+}
 
-	if _, err := repo.GetUserByID(ctx, uuid.New()); !errors.Is(err, models.ErrNotFound) {
+func TestUsersGetByID(t *testing.T) {
+	repo := newRepo(t)
+	alice := mustCreateUser(t, repo, "alice@example.com")
+
+	got, err := repo.Users.GetByID(t.Context(), alice.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+
+	if got.Email != alice.Email {
+		t.Errorf("GetByID = %+v, want %+v", got, alice)
+	}
+
+	if _, err := repo.Users.GetByID(t.Context(), uuid.New()); !errors.Is(err, models.ErrNotFound) {
 		t.Errorf("unknown id: want ErrNotFound, got %v", err)
 	}
 }
 
-func TestTaskLifecycle(t *testing.T) {
+func TestTasksLifecycle(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
 	alice := mustCreateUser(t, repo, "alice@example.com")
@@ -200,16 +230,15 @@ func TestTaskLifecycle(t *testing.T) {
 		t.Fatalf("unexpected created task: %+v", task)
 	}
 
-	got, err := repo.GetTask(ctx, task.ID)
-	if err != nil || got.Title != "Write docs" || got.Description != "API reference" {
-		t.Fatalf("GetTask = %+v, %v", got, err)
+	if got := mustGetTask(t, repo, task.ID); got.Title != "Write docs" || got.Description != "API reference" {
+		t.Fatalf("Get = %+v", got)
 	}
 
 	title, status := "Write better docs", models.StatusInProgress
 
-	updated, err := repo.UpdateTask(ctx, task.ID, models.TaskUpdate{Title: &title, Status: &status, AssigneeID: &bob.ID})
+	updated, err := repo.Tasks.Update(ctx, task.ID, models.TaskUpdate{Title: &title, Status: &status, AssigneeID: &bob.ID})
 	if err != nil {
-		t.Fatalf("UpdateTask: %v", err)
+		t.Fatalf("Update: %v", err)
 	}
 
 	if updated.Title != title || updated.Status != status || updated.AssigneeID != bob.ID ||
@@ -221,16 +250,16 @@ func TestTaskLifecycle(t *testing.T) {
 		t.Errorf("updated_at was not bumped: %s -> %s", task.UpdatedAt, updated.UpdatedAt)
 	}
 
-	if err := repo.DeleteTask(ctx, task.ID); err != nil {
-		t.Fatalf("DeleteTask: %v", err)
+	if err := repo.Tasks.Delete(ctx, task.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
 	}
 
-	if _, err := repo.GetTask(ctx, task.ID); !errors.Is(err, models.ErrNotFound) {
+	if _, err := repo.Tasks.Get(ctx, task.ID); !errors.Is(err, models.ErrNotFound) {
 		t.Errorf("get deleted task: want ErrNotFound, got %v", err)
 	}
 }
 
-func TestTaskErrors(t *testing.T) {
+func TestTasksErrors(t *testing.T) {
 	repo := newRepo(t)
 	ctx := t.Context()
 	alice := mustCreateUser(t, repo, "alice@example.com")
@@ -240,24 +269,24 @@ func TestTaskErrors(t *testing.T) {
 	unknown := uuid.New()
 	title := "x"
 
-	_, err := repo.CreateTask(ctx, models.Task{
+	_, err := repo.Tasks.Create(ctx, models.Task{
 		Title: "Task", Deadline: time.Now(), Status: models.StatusCreated, CreatorID: alice.ID, AssigneeID: unknown,
 	})
 	wantValidationErr(t, err, "assignee_id")
 
-	_, err = repo.UpdateTask(ctx, task.ID, models.TaskUpdate{AssigneeID: &unknown})
+	_, err = repo.Tasks.Update(ctx, task.ID, models.TaskUpdate{AssigneeID: &unknown})
 	wantValidationErr(t, err, "assignee_id")
 
-	if _, err := repo.UpdateTask(ctx, unknown, models.TaskUpdate{Title: &title}); !errors.Is(err, models.ErrNotFound) {
+	if _, err := repo.Tasks.Update(ctx, unknown, models.TaskUpdate{Title: &title}); !errors.Is(err, models.ErrNotFound) {
 		t.Errorf("update unknown task: want ErrNotFound, got %v", err)
 	}
 
-	if err := repo.DeleteTask(ctx, unknown); !errors.Is(err, models.ErrNotFound) {
+	if err := repo.Tasks.Delete(ctx, unknown); !errors.Is(err, models.ErrNotFound) {
 		t.Errorf("delete unknown task: want ErrNotFound, got %v", err)
 	}
 }
 
-func TestStatusEnumRoundTrip(t *testing.T) {
+func TestTasksStatusEnumRoundTrip(t *testing.T) {
 	repo := newRepo(t)
 	alice := mustCreateUser(t, repo, "alice@example.com")
 
@@ -269,19 +298,18 @@ func TestStatusEnumRoundTrip(t *testing.T) {
 			CreatorID: alice.ID, AssigneeID: alice.ID,
 		})
 
-		got, err := repo.GetTask(t.Context(), task.ID)
-		if err != nil || got.Status != status {
-			t.Errorf("status %q round trip = %q, %v", status, got.Status, err)
+		if got := mustGetTask(t, repo, task.ID); got.Status != status {
+			t.Errorf("status %q round trip = %q", status, got.Status)
 		}
 	}
 
 	bogus := models.Status("archived")
-	if _, _, err := repo.ListTasks(t.Context(), models.TaskFilter{Status: &bogus, Limit: 10}); err == nil {
+	if _, _, err := repo.Tasks.List(t.Context(), models.TaskFilter{Status: &bogus, Limit: 10}); err == nil {
 		t.Error("value outside the enum must be rejected by Postgres")
 	}
 }
 
-func TestListTasks(t *testing.T) {
+func TestTasksList(t *testing.T) {
 	repo := newRepo(t)
 	alice := mustCreateUser(t, repo, "alice@example.com")
 	bob := mustCreateUser(t, repo, "bob@example.com")
@@ -360,13 +388,13 @@ func TestListTasks(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tasks, total, err := repo.ListTasks(t.Context(), tt.filter)
+			list, total, err := repo.Tasks.List(t.Context(), tt.filter)
 			if err != nil {
-				t.Fatalf("ListTasks: %v", err)
+				t.Fatalf("List: %v", err)
 			}
 
-			titles := make([]string, 0, len(tasks))
-			for _, task := range tasks {
+			titles := make([]string, 0, len(list))
+			for _, task := range list {
 				titles = append(titles, task.Title)
 			}
 
@@ -377,7 +405,7 @@ func TestListTasks(t *testing.T) {
 	}
 }
 
-func TestMarkOverdue(t *testing.T) {
+func TestTasksMarkOverdue(t *testing.T) {
 	repo := newRepo(t)
 	alice := mustCreateUser(t, repo, "alice@example.com")
 	past, future := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
@@ -401,19 +429,27 @@ func TestMarkOverdue(t *testing.T) {
 		}).ID
 	}
 
-	marked, err := repo.MarkOverdue(t.Context())
-	if err != nil || marked != 2 {
-		t.Fatalf("MarkOverdue = %d, %v; want 2", marked, err)
+	marked, err := repo.Tasks.MarkOverdue(t.Context())
+	if err != nil {
+		t.Fatalf("MarkOverdue: %v", err)
+	}
+
+	if marked != 2 {
+		t.Fatalf("MarkOverdue = %d, want 2", marked)
 	}
 
 	for i, s := range seed {
-		got, err := repo.GetTask(t.Context(), ids[i])
-		if err != nil || got.Status != s.want {
-			t.Errorf("task %d (%s): status %q, want %q (err %v)", i, s.status, got.Status, s.want, err)
+		if got := mustGetTask(t, repo, ids[i]); got.Status != s.want {
+			t.Errorf("task %d (%s): status %q, want %q", i, s.status, got.Status, s.want)
 		}
 	}
 
-	if marked, err := repo.MarkOverdue(t.Context()); err != nil || marked != 0 {
-		t.Errorf("second MarkOverdue = %d, %v; want 0", marked, err)
+	marked, err = repo.Tasks.MarkOverdue(t.Context())
+	if err != nil {
+		t.Fatalf("second MarkOverdue: %v", err)
+	}
+
+	if marked != 0 {
+		t.Errorf("second MarkOverdue = %d, want 0", marked)
 	}
 }
