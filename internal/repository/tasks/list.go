@@ -8,8 +8,6 @@ import (
 	"github.com/mmfshirokan/task-manager/models"
 )
 
-// List возвращает страницу задач по фильтру, от новых к старым, и общее число
-// подходящих задач.
 func (r *Repository) List(ctx context.Context, filter models.TaskFilter) ([]models.Task, int, error) {
 	where, args := buildWhere(filter)
 

@@ -11,7 +11,6 @@ import (
 	"github.com/mmfshirokan/task-manager/models"
 )
 
-// Update записывает в задачу только поля upd, отличные от nil.
 func (r *Repository) Update(ctx context.Context, id uuid.UUID, upd models.TaskUpdate) (models.Task, error) {
 	const query = `
 		UPDATE tasks SET

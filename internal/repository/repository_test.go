@@ -67,7 +67,6 @@ func runWithPostgres(m *testing.M) (int, error) {
 		}
 	}()
 
-	// Страховка: docker удалит контейнер, даже если тестовый процесс будет убит.
 	if err := resource.Expire(300); err != nil {
 		return 0, fmt.Errorf("set container expiry: %w", err)
 	}

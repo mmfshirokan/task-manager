@@ -5,8 +5,6 @@ import (
 	"github.com/mmfshirokan/task-manager/internal/repository/users"
 )
 
-// DB — подмножество pgx, которое нужно репозиториям таблиц. Ему соответствуют
-// *pgxpool.Pool, *pgx.Conn и pgx.Tx.
 type DB interface {
 	users.DB
 	tasks.DB

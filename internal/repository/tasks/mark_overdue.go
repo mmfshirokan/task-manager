@@ -5,8 +5,6 @@ import (
 	"fmt"
 )
 
-// MarkOverdue переводит в статус overdue невыполненные задачи с истёкшим сроком
-// и возвращает число изменённых задач.
 func (r *Repository) MarkOverdue(ctx context.Context) (int64, error) {
 	const query = `
 		UPDATE tasks
