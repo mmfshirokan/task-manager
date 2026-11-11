@@ -19,7 +19,7 @@ REST API для управления задачами: регистрация и
 
 ## Требования
 
-- Go 1.27+
+- Go 1.27.4+
 - Docker с Docker Compose — для запуска стека и интеграционных тестов
 - [gotestsum](https://github.com/gotestyourself/gotestsum) — для `make test`:
   `go install gotest.tools/gotestsum@latest`
@@ -162,7 +162,7 @@ POSTGRES_PORT=5432                                                         # П�
 Валидация: корректный email, пароль 8–72 байта, `title` 1–200 символов, `description`
 до 5000 символов, `deadline` новой задачи — RFC 3339 и в будущем.
 
-Фильтры списка: `status`, `assignee_id`, `deadline_from` / `deadline_to` (RFC 3339),
+Фильтры списка: `status`, `assignee_id`, `creator_id`, `deadline_from` / `deadline_to` (RFC 3339),
 `limit` (1–100, по умолчанию 20), `offset`.
 
 ## Структура проекта
@@ -212,7 +212,7 @@ task-manager/
 
 ```mermaid
 flowchart TD
-    mainNode["main.go"] --> handlerLayer["internal/handler (HTTP)"]
+    mainNode["main.go → app.Run"] --> handlerLayer["internal/handlers (HTTP)"]
     mainNode --> cronLayer["internal/cron (OverdueJob)"]
     handlerLayer -->|"TaskService / AuthService interfaces"| serviceLayer["internal/service"]
     cronLayer -->|"OverdueMarker interface"| serviceLayer

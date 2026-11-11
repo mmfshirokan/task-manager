@@ -52,7 +52,10 @@ func Run() error {
 	defer pool.Close()
 
 	repo := repository.New(pool)
-	svc := service.New(repo.Users, repo.Tasks, service.Config{JWTSecret: []byte(cfg.JWTSecret), TokenTTL: cfg.JWTTTL}, logger)
+	svc := service.New(repo.Users, repo.Tasks, service.Config{
+		JWTSecret: []byte(cfg.JWTSecret),
+		TokenTTL:  cfg.JWTTTL,
+	}, logger)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),

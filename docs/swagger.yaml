@@ -259,7 +259,7 @@ paths:
   /api/v1/tasks:
     get:
       description: Возвращает страницу задач всех пользователей, от новых к старым.
-        Поддерживает фильтры по статусу, исполнителю и диапазону сроков.
+        Поддерживает фильтры по статусу, исполнителю, автору и диапазону сроков.
       parameters:
       - description: Статус задачи
         enum:
@@ -274,6 +274,11 @@ paths:
         format: uuid
         in: query
         name: assignee_id
+        type: string
+      - description: Идентификатор автора
+        format: uuid
+        in: query
+        name: creator_id
         type: string
       - description: Срок не раньше (RFC 3339, включительно)
         format: date-time

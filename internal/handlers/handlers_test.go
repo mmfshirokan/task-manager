@@ -267,9 +267,9 @@ func TestGetTask(t *testing.T) {
 }
 
 func TestListTasks(t *testing.T) {
-	assignee := uuid.New()
-	query := fmt.Sprintf("/api/v1/tasks?status=in_progress&assignee_id=%s"+
-		"&deadline_from=2030-01-01T00:00:00Z&deadline_to=2030-02-01T00:00:00Z&limit=5&offset=10", assignee)
+	assignee, creator := uuid.New(), uuid.New()
+	query := fmt.Sprintf("/api/v1/tasks?status=in_progress&assignee_id=%s&creator_id=%s"+
+		"&deadline_from=2030-01-01T00:00:00Z&deadline_to=2030-02-01T00:00:00Z&limit=5&offset=10", assignee, creator)
 
 	run(t, []testCase{
 		{
@@ -277,7 +277,7 @@ func TestListTasks(t *testing.T) {
 			setup: func(t *testing.T, d deps) {
 				d.tasks.EXPECT().List(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(_ context.Context, f models.TaskFilter) (models.TaskPage, error) {
-						checkFilter(t, f, assignee)
+						checkFilter(t, f, assignee, creator)
 
 						return models.TaskPage{Items: []models.Task{sampleTask()}, Total: 11, Limit: 5, Offset: 10}, nil
 					})
@@ -300,13 +300,17 @@ func TestListTasks(t *testing.T) {
 			wantStatus: http.StatusBadRequest, wantBody: "assignee_id: must be a valid UUID",
 		},
 		{
+			name: "invalid creator", method: http.MethodGet, path: "/api/v1/tasks?creator_id=alice", token: validToken,
+			wantStatus: http.StatusBadRequest, wantBody: "creator_id: must be a valid UUID",
+		},
+		{
 			name: "invalid deadline", method: http.MethodGet, path: "/api/v1/tasks?deadline_to=tomorrow", token: validToken,
 			wantStatus: http.StatusBadRequest, wantBody: "deadline_to: must be an RFC 3339 timestamp",
 		},
 	})
 }
 
-func checkFilter(t *testing.T, f models.TaskFilter, assignee uuid.UUID) {
+func checkFilter(t *testing.T, f models.TaskFilter, assignee, creator uuid.UUID) {
 	t.Helper()
 
 	wantFrom := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -317,6 +321,8 @@ func checkFilter(t *testing.T, f models.TaskFilter, assignee uuid.UUID) {
 		t.Errorf("status = %v, want in_progress", f.Status)
 	case f.AssigneeID == nil || *f.AssigneeID != assignee:
 		t.Errorf("assignee = %v, want %s", f.AssigneeID, assignee)
+	case f.CreatorID == nil || *f.CreatorID != creator:
+		t.Errorf("creator = %v, want %s", f.CreatorID, creator)
 	case f.DeadlineFrom == nil || !f.DeadlineFrom.Equal(wantFrom):
 		t.Errorf("deadline_from = %v, want %s", f.DeadlineFrom, wantFrom)
 	case f.DeadlineTo == nil || !f.DeadlineTo.Equal(wantTo):

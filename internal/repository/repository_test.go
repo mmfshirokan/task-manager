@@ -316,20 +316,21 @@ func TestTasksList(t *testing.T) {
 	base := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	seed := []struct {
+		creator  uuid.UUID
 		assignee uuid.UUID
 		status   models.Status
 		days     int
 	}{
-		{alice.ID, models.StatusCreated, 1},
-		{alice.ID, models.StatusInProgress, 2},
-		{bob.ID, models.StatusInProgress, 3},
-		{bob.ID, models.StatusCompleted, 4},
-		{bob.ID, models.StatusCreated, 5},
+		{alice.ID, alice.ID, models.StatusCreated, 1},
+		{alice.ID, alice.ID, models.StatusInProgress, 2},
+		{alice.ID, bob.ID, models.StatusInProgress, 3},
+		{bob.ID, bob.ID, models.StatusCompleted, 4},
+		{bob.ID, bob.ID, models.StatusCreated, 5},
 	}
 	for i, s := range seed {
 		mustCreateTask(t, repo, models.Task{
 			Title: fmt.Sprintf("task %d", i+1), Deadline: base.AddDate(0, 0, s.days), Status: s.status,
-			CreatorID: alice.ID, AssigneeID: s.assignee,
+			CreatorID: s.creator, AssigneeID: s.assignee,
 		})
 	}
 
@@ -359,6 +360,18 @@ func TestTasksList(t *testing.T) {
 			filter:     models.TaskFilter{AssigneeID: &alice.ID, Limit: 10},
 			wantTotal:  2,
 			wantTitles: []string{"task 2", "task 1"},
+		},
+		{
+			name:       "by creator",
+			filter:     models.TaskFilter{CreatorID: &bob.ID, Limit: 10},
+			wantTotal:  2,
+			wantTitles: []string{"task 5", "task 4"},
+		},
+		{
+			name:       "by creator and assignee",
+			filter:     models.TaskFilter{CreatorID: &alice.ID, AssigneeID: &bob.ID, Limit: 10},
+			wantTotal:  1,
+			wantTitles: []string{"task 3"},
 		},
 		{
 			name:       "by deadline range (inclusive)",

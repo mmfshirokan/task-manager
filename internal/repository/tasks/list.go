@@ -65,6 +65,10 @@ func buildWhere(filter models.TaskFilter) (string, []any) {
 		add("assignee_id = $%d", *filter.AssigneeID)
 	}
 
+	if filter.CreatorID != nil {
+		add("creator_id = $%d", *filter.CreatorID)
+	}
+
 	if filter.DeadlineFrom != nil {
 		add("deadline >= $%d", *filter.DeadlineFrom)
 	}

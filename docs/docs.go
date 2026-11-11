@@ -126,7 +126,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Возвращает страницу задач всех пользователей, от новых к старым. Поддерживает фильтры по статусу, исполнителю и диапазону сроков.",
+                "description": "Возвращает страницу задач всех пользователей, от новых к старым. Поддерживает фильтры по статусу, исполнителю, автору и диапазону сроков.",
                 "produces": [
                     "application/json"
                 ],
@@ -152,6 +152,13 @@ const docTemplate = `{
                         "format": "uuid",
                         "description": "Идентификатор исполнителя",
                         "name": "assignee_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Идентификатор автора",
+                        "name": "creator_id",
                         "in": "query"
                     },
                     {

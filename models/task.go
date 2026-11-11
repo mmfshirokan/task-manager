@@ -84,6 +84,7 @@ func (u TaskUpdate) Fields() []string {
 type TaskFilter struct {
 	Status       *Status
 	AssigneeID   *uuid.UUID
+	CreatorID    *uuid.UUID
 	DeadlineFrom *time.Time
 	DeadlineTo   *time.Time
 	Limit        int

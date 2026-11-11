@@ -12,12 +12,13 @@ import (
 )
 
 // @Summary		Список задач
-// @Description	Возвращает страницу задач всех пользователей, от новых к старым. Поддерживает фильтры по статусу, исполнителю и диапазону сроков.
+// @Description	Возвращает страницу задач всех пользователей, от новых к старым. Поддерживает фильтры по статусу, исполнителю, автору и диапазону сроков.
 // @Tags			Задачи
 // @Produce		json
 // @Security		BearerAuth
 // @Param			status			query		string					false	"Статус задачи"								Enums(created, in_progress, completed, overdue)
 // @Param			assignee_id		query		string					false	"Идентификатор исполнителя"					Format(uuid)
+// @Param			creator_id		query		string					false	"Идентификатор автора"						Format(uuid)
 // @Param			deadline_from	query		string					false	"Срок не раньше (RFC 3339, включительно)"	Format(date-time)
 // @Param			deadline_to		query		string					false	"Срок не позже (RFC 3339, включительно)"	Format(date-time)
 // @Param			limit			query		int						false	"Размер страницы, от 1 до 100"				default(20)	minimum(1)	maximum(100)
@@ -57,6 +58,10 @@ func parseFilter(q url.Values) (models.TaskFilter, error) {
 	}
 
 	if filter.AssigneeID, err = optionalUUID(q, "assignee_id"); err != nil {
+		return models.TaskFilter{}, err
+	}
+
+	if filter.CreatorID, err = optionalUUID(q, "creator_id"); err != nil {
 		return models.TaskFilter{}, err
 	}
 
